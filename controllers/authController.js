@@ -1,113 +1,149 @@
-const User = require('../models/User');
-const jwt = require('jsonwebtoken');
+const jwt = require("jsonwebtoken");
+const bcrypt = require("bcryptjs");
+const User = require("../models/user");
 
-const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET || 'secret123', {
-    expiresIn: '30d',
-  });
+/* TOKEN */
+const generateToken = (user) => {
+return jwt.sign(
+{
+id: user._id,
+email: user.email,
+role: user.role
+},
+process.env.JWT_SECRET || "secretkey",
+{ expiresIn: "7d" }
+);
 };
 
-// @desc    Register a new user
-// @route   POST /api/auth/register
-// @access  Public
-const registerUser = async (req, res) => {
-  try {
-    const { name, email, password, role } = req.body;
-    
-    const userExists = await User.findOne({ email });
-    if (userExists) {
-      return res.status(400).json({ message: 'User already exists' });
-    }
+/* REGISTER */
+const registerUser = async (req,res) => {
+try {
 
-    const user = await User.create({
-      name,
-      email,
-      password,
-      role: role || 'student'
-    });
+const { name,email,password,role } = req.body;
 
-    if (user) {
-      res.status(201).json({
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        token: generateToken(user._id),
-      });
-    } else {
-      res.status(400).json({ message: 'Invalid user data' });
-    }
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
+if (!name || !email || !password) {
+return res.status(400).json({
+success:false,
+message:"Please fill all fields"
+});
+}
+
+const exist = await User.findOne({ email });
+
+if (exist) {
+return res.status(400).json({
+success:false,
+message:"Email already exists"
+});
+}
+
+const hash = await bcrypt.hash(password,10);
+
+const user = await User.create({
+name,
+email,
+password: hash,
+role: role || "student"
+});
+
+res.status(201).json({
+success:true,
+message:"Registration Successful",
+token: generateToken(user),
+role:user.role,
+name:user.name,
+user
+});
+
+} catch(err){
+res.status(500).json({
+success:false,
+message:err.message
+});
+}
 };
 
-// @desc    Auth user & get token
-// @route   POST /api/auth/login
-// @access  Public
-const loginUser = async (req, res) => {
-  try {
-    const { email, password } = req.body;
+/* LOGIN */
+const loginUser = async (req,res) => {
+try {
 
-    const user = await User.findOne({ email });
+const { email,password } = req.body;
 
-    if (user && (await user.matchPassword(password))) {
-      res.json({
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        token: generateToken(user._id),
-      });
-    } else {
-      res.status(401).json({ message: 'Invalid email or password' });
-    }
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
+const user = await User.findOne({ email });
+
+if (!user) {
+return res.status(401).json({
+success:false,
+message:"Invalid email or password"
+});
+}
+
+const match = await bcrypt.compare(password,user.password);
+
+if (!match) {
+return res.status(401).json({
+success:false,
+message:"Invalid email or password"
+});
+}
+
+res.json({
+success:true,
+message:"Login Successful",
+token: generateToken(user),
+role:user.role,
+name:user.name,
+user
+});
+
+} catch(err){
+res.status(500).json({
+success:false,
+message:err.message
+});
+}
 };
 
-// @desc    Get user profile
-// @route   GET /api/auth/profile
-// @access  Private
-const getUserProfile = async (req, res) => {
-  const user = await User.findById(req.user._id);
+/* PROFILE */
+const getUserProfile = async (req,res) => {
 
-  if (user) {
-    res.json({
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-    });
-  } else {
-    res.status(404).json({ message: 'User not found' });
-  }
+const user = await User.findById(req.user.id).select("-password");
+
+res.json({
+success:true,
+user
+});
+
 };
 
-// @desc    Get all users (for admin)
-// @route   GET /api/auth/users
-// @access  Private/Admin
-const getUsers = async (req, res) => {
-  try {
-    const users = await User.find({}).select('-password');
-    res.json(users);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
+/* USERS */
+const getUsers = async (req,res) => {
+
+const users = await User.find().select("-password");
+
+res.json({
+success:true,
+users
+});
+
 };
 
-// @desc    Delete user
-// @route   DELETE /api/auth/users/:id
-// @access  Private/Admin
-const deleteUser = async (req, res) => {
-  try {
-    const user = await User.findByIdAndDelete(req.params.id);
-    if (!user) return res.status(404).json({ message: 'User not found' });
-    res.json({ message: 'User deleted' });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
+/* DELETE */
+const deleteUser = async (req,res) => {
+
+await User.findByIdAndDelete(req.params.id);
+
+res.json({
+success:true,
+message:"User Deleted"
+});
+
 };
 
-module.exports = { registerUser, loginUser, getUserProfile, getUsers, deleteUser };
+module.exports = {
+registerUser,
+loginUser,
+getUserProfile,
+getUsers,
+deleteUser
+};

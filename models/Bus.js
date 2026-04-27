@@ -1,11 +1,45 @@
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 
-const busSchema = new mongoose.Schema({
-  busNumber: { type: String, required: true, unique: true },
-  capacity: { type: Number, required: true },
-  seatsAvailable: { type: Number, required: true },
-  status: { type: String, enum: ['active', 'inactive', 'maintenance'], default: 'active' },
-  driver: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
-}, { timestamps: true });
+const busSchema = new mongoose.Schema(
+{
+  busNumber: {
+    type: String,
+    required: true,
+    unique: true,
+    trim: true
+  },
 
-module.exports = mongoose.model('Bus', busSchema);
+  capacity: {
+    type: Number,
+    required: true,
+    default: 40
+  },
+
+  seatsAvailable: {
+    type: Number,
+    default: 40
+  },
+
+  status: {
+    type: String,
+    enum: ["active", "inactive", "maintenance"],
+    default: "inactive"
+  },
+
+  driver: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+    default: null
+  },
+
+  currentLocation: {
+    lat: { type: Number, default: 0 },
+    lng: { type: Number, default: 0 }
+  }
+},
+{
+  timestamps: true
+}
+);
+
+module.exports = mongoose.model("Bus", busSchema);

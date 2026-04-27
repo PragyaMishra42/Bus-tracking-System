@@ -1,97 +1,175 @@
-const Booking = require('../models/Booking');
-const Bus = require('../models/Bus');
+const Booking = require("../models/booking");
+const Bus = require("../models/bus");
 
-// @desc    Book a seat
-// @route   POST /api/bookings
-// @access  Private
-const bookSeat = async (req, res) => {
+/* ===============================
+   GET CURRENT USER ID SAFELY
+================================= */
+const getCurrentUserId = (req) => {
+  return req.user?._id || req.user?.id || null;
+};
+
+/* ===============================
+   GET MY BOOKINGS
+================================= */
+const getMyBookings = async (req, res) => {
   try {
+    const userId = getCurrentUserId(req);
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized"
+      });
+    }
+
+    const bookings = await Booking.find({
+      userId
+    })
+      .populate("busId", "busNumber")
+      .populate("routeId", "source destination");
+
+    res.json(bookings);
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+/* ===============================
+   CREATE BOOKING
+================================= */
+const createBooking = async (req, res) => {
+  try {
+    const userId = getCurrentUserId(req);
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized"
+      });
+    }
+
     const { busId, routeId, seatNumber } = req.body;
 
-    // Check if bus has available seats
     const bus = await Bus.findById(busId);
-    if (!bus) return res.status(404).json({ message: 'Bus not found' });
-    if (bus.seatsAvailable <= 0) return res.status(400).json({ message: 'No seats available' });
 
-    // Check if seat is already booked (simplified logic)
-    const existingBooking = await Booking.findOne({ busId, routeId, seatNumber, status: 'confirmed' });
-    if (existingBooking) return res.status(400).json({ message: 'Seat already booked' });
+    if (!bus) {
+      return res.status(404).json({
+        success: false,
+        message: "Bus not found"
+      });
+    }
 
-    const booking = new Booking({
-      userId: req.user._id,
+    if (bus.seatsAvailable <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No seats available"
+      });
+    }
+
+    const existingSeat = await Booking.findOne({
       busId,
-      routeId,
-      seatNumber
+      seatNumber,
+      status: "confirmed"
     });
 
-    await booking.save();
-    
-    // Decrement available seats
+    if (existingSeat) {
+      return res.status(400).json({
+        success: false,
+        message: "Seat already booked"
+      });
+    }
+
+    const booking = await Booking.create({
+      userId,
+      busId,
+      routeId,
+      seatNumber,
+      status: "confirmed"
+    });
+
     bus.seatsAvailable -= 1;
     await bus.save();
 
-    res.status(201).json(booking);
+    res.status(201).json({
+      success: true,
+      message: "Booked Successfully",
+      booking
+    });
+
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
   }
 };
 
-// @desc    Get bookings (admin: all, others: own)
-// @route   GET /api/bookings
-// @access  Private
-const getBookings = async (req, res) => {
-  try {
-    const filter = req.user.role === 'admin' ? {} : { userId: req.user._id };
-    const bookings = await Booking.find(filter)
-      .populate('userId', 'name email role')
-      .populate('busId', 'busNumber capacity seatsAvailable status')
-      .populate('routeId');
-    res.json(bookings);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-// @desc    Get user bookings
-// @route   GET /api/bookings/my-bookings
-// @access  Private
-const getMyBookings = async (req, res) => {
-  try {
-    const bookings = await Booking.find({ userId: req.user._id }).populate('busId', 'busNumber').populate('routeId');
-    res.json(bookings);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-// @desc    Cancel a booking
-// @route   DELETE /api/bookings/:id
-// @access  Private
+/* ===============================
+   CANCEL BOOKING
+================================= */
 const cancelBooking = async (req, res) => {
   try {
+    const userId = getCurrentUserId(req);
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized"
+      });
+    }
+
     const booking = await Booking.findById(req.params.id);
 
     if (!booking) {
-      return res.status(404).json({ message: 'Booking not found' });
+      return res.status(404).json({
+        success: false,
+        message: "Booking not found"
+      });
     }
 
-    if (booking.userId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
-      return res.status(401).json({ message: 'Not authorized' });
+    if (String(booking.userId) !== String(userId)) {
+      return res.status(403).json({
+        success: false,
+        message: "Forbidden"
+      });
     }
 
-    booking.status = 'cancelled';
+    if (booking.status === "cancelled") {
+      return res.status(400).json({
+        success: false,
+        message: "Already cancelled"
+      });
+    }
+
+    booking.status = "cancelled";
     await booking.save();
 
     const bus = await Bus.findById(booking.busId);
-    if(bus) {
+
+    if (bus) {
       bus.seatsAvailable += 1;
       await bus.save();
     }
 
-    res.json({ message: 'Booking cancelled successfully' });
+    res.json({
+      success: true,
+      message: "Booking Cancelled"
+    });
+
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
   }
 };
 
-module.exports = { bookSeat, getBookings, getMyBookings, cancelBooking };
+module.exports = {
+  getMyBookings,
+  createBooking,
+  cancelBooking
+};
